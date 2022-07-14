@@ -27,7 +27,6 @@ we need a contract which has a method which creates
 4. derive a PDA from the mint & the program which holds the metadata
  **/
 
-// const MON_TOKENS_MAX_SUPPLY: u64 = 100_000_000;
 const DECIMALS: u8 = 6;
 const PREFIX: &[u8] = b"crypto-mons";
 const CREATOR: &[u8] = b"creator";
@@ -40,26 +39,14 @@ const STAT_TOKEN_STORE: &[u8] = b"stat-token-store";
 
 #[program]
 pub mod mon_maker {
-    use anchor_spl::token::Transfer;
-    use super::*;
     pub fn initialize(_ctx: Context<Initialize>, _game_creator_bump: u8, _mon_token_bump: u8, _mass_bump: u8, _energy_bump: u8, _order_bump: u8) -> ProgramResult {
-        // let seeds = &[PREFIX, &ctx.accounts.game_creator_auth.key().to_bytes()[..], CREATOR, &[game_creator_bump]];
-        // let signer = &[&seeds[..]];
-        // let mon_token_max_supply = MintTo {
-        //     mint: ctx.accounts.mon_token_mint_pda.to_account_info(),
-        //     to: ctx.accounts.treasury_mon_token_ata_pda.to_account_info(),
-        //     authority: ctx.accounts.game_creator_pda.to_account_info(),
-        // };
-        // token::mint_to(CpiContext::new_with_signer(
-        //     ctx.accounts.token_program.to_account_info(),
-        //     mon_token_max_supply,
-        //     signer
-        // ), MON_TOKENS_MAX_SUPPLY);
         Ok(())
     }
     pub fn initialize_user(_ctx: Context<InitializeUser>, _game_creator_bump: u8, _mon_token_bump: u8, _mass_bump: u8, _energy_bump: u8, _order_bump: u8) -> ProgramResult {
         Ok(())
     }
+    
+    /** create tokens associated with stats of nft in-game character */
     pub fn mint_stat_tokens_to(ctx: Context<MintStatTokensTo>, amount: u64, _stat_seed: String, _mint_bump: u8, game_creator_bump: u8) -> ProgramResult {
         let seeds = &[PREFIX, &ctx.accounts.game_creator_auth.key().to_bytes()[..], CREATOR, &[game_creator_bump]];
         let signer = &[&seeds[..]];
@@ -74,18 +61,16 @@ pub mod mon_maker {
         ), amount)?;
         Ok(())
     }
+    
+    /** initializing game data state holding account associated with nft */
     pub fn initialize_nft_mon_state(ctx: Context<InitializeNftMonState>,  _mon_state_bump: u8) -> ProgramResult {
-        // msg!("mon state bump {}", mon_state_bump);
-
         let mon_state = &mut ctx.accounts.mon_state;
-        // msg!("before prints");
-        // msg!("mon state {}", mon_state.to_account_info().key().to_string());
-        // msg!("set auth {}", mon_state.to_account_info().owner.key().to_string());
         let now_ts = Clock::get().unwrap().unix_timestamp as u64;
-        // msg!("")
         mon_state.seed = now_ts;
         Ok(())
     }
+    
+    /** creating new token (mint) for input user */
     pub fn initialize_nft_mint(ctx: Context<InitializeNftMint>, game_creator_bump: u8, _nft_bump: u8) -> ProgramResult {
         let seeds = &[PREFIX, &ctx.accounts.game_creator_auth.key().to_bytes()[..], CREATOR, &[game_creator_bump]];
         let signer = &[&seeds[..]];
@@ -100,6 +85,7 @@ pub mod mon_maker {
         ), 1_u64)?;
         Ok(())
     }
+    /** creating metaplex metadata accounts */
     pub fn mint_nft(ctx: Context<CreateMint>, _metadata_bump: u8, game_creator_bump: u8) -> ProgramResult {
         let metadata_infos = vec![
             ctx.accounts.metadata.to_account_info(),
@@ -112,7 +98,6 @@ pub mod mon_maker {
             ctx.accounts.rent.to_account_info(),
             ctx.accounts.game_creator_auth.to_account_info(),
         ];
-        // let game_creator = ctx.accounts.creator_auth.clone();
         let creators: Vec<mpl_token_metadata::state::Creator> =
             vec![mpl_token_metadata::state::Creator {
                 address: ctx.accounts.game_creator_pda.key(),
@@ -126,11 +111,7 @@ pub mod mon_maker {
         let symbol = format!("$MON");
         let seller_basis_points = 650;
         let is_mutable = true;
-        // let gc_key = game_creator.key();
-        // let authority_seeds = [PREFIX, gc_key.as_ref(), &[metadata_bump]];
         let seeds = &[PREFIX, &ctx.accounts.game_creator_auth.key().to_bytes()[..], CREATOR, &[game_creator_bump]];
-        // let signer = &[&seeds[..]];
-        // msg!("Before metadata");
 
         invoke_signed(
             &create_metadata_accounts(
@@ -151,8 +132,7 @@ pub mod mon_maker {
             metadata_infos.as_slice(),
             &[&seeds[..]],
         )?;
-
-        // msg!("Before instr check");
+        
         sol_log_compute_units();
 
         let instruction_sysvar_account = &ctx.accounts.instruction_sysvar_account;
@@ -161,17 +141,16 @@ pub mod mon_maker {
         if let Err(e) = instruction_check(instruction_sysvar_account_info, ctx.program_id.key()) {
             return Err(e);
         }
-        // msg!("At the end");
         sol_log_compute_units();
         Ok(())
     }
+    
+    /** level-up mon, increasing its statistics as well as assigning new stat tokens for the corresponding increases */
     pub fn level_up_mon(ctx: Context<LevelUpMon>, _mon_state_bump: u8, game_creator_bump: u8, _mon_token_bump: u8, _mass_mint_bump: u8, _energy_mint_bump: u8, _order_mint_bump: u8) -> ProgramResult {
         let mon_state = &mut ctx.accounts.mon_state;
         let level = mon_state.level;
         let prev_stats: MonStatistics = mon_state.generate_stats(level);
         let next_stats: MonStatistics = mon_state.generate_stats(level + 1);
-        // msg!("prev mass {}, energy {}, entropy {}, level {}", prev_stats.mass, prev_stats.energy, prev_stats.order, level);
-        // msg!("next mass {}, energy {}, entropy {}, level {}", next_stats.mass, next_stats.energy, next_stats.order, level + 1);
         let stats_added = MonStatistics::diff_stats(next_stats, prev_stats).to_mon_lamports();
         msg!("user_balance mass {}, energy {}, order {}", ctx.accounts.user_mass_ata_pda.amount, ctx.accounts.user_energy_ata_pda.amount, ctx.accounts.user_order_ata_pda.amount);
         msg!("stats_added mass {}, energy {}, order {}", stats_added.mass, stats_added.energy, stats_added.order);
@@ -222,49 +201,17 @@ pub mod mon_maker {
             },
             signer
         ), stat_cost.order)?;
-
-        // let mass_transfer_context = Transfer {
-        //     from: ctx.accounts.user_mass_ata_pda.to_account_info(),
-        //     to: ctx.accounts.treasury_mass_ata_pda.to_account_info(),
-        //     authority: ctx.accounts.user_account.to_account_info()
-        // };
-        // token::transfer(CpiContext::new_with_signer(
-        //     ctx.accounts.token_program.to_account_info(),
-        //     mass_transfer_context,
-        //     signer
-        // ), stat_cost.mass as u64)?;
-        // let energy_transfer_context = Transfer {
-        //     from: ctx.accounts.user_energy_ata_pda.to_account_info(),
-        //     to: ctx.accounts.treasury_energy_ata_pda.to_account_info(),
-        //     authority: ctx.accounts.user_account.to_account_info()
-        // };
-        // token::transfer(CpiContext::new_with_signer(
-        //     ctx.accounts.token_program.to_account_info(),
-        //     energy_transfer_context,
-        //     signer
-        // ), stat_cost.energy as u64)?;
-        // let order_transfer_context = Transfer {
-        //     from: ctx.accounts.user_order_ata_pda.to_account_info(),
-        //     to: ctx.accounts.treasury_order_ata_pda.to_account_info(),
-        //     authority: ctx.accounts.user_account.to_account_info()
-        // };
-        // token::transfer(CpiContext::new_with_signer(
-        //     ctx.accounts.token_program.to_account_info(),
-        //     order_transfer_context,
-        //     signer
-        // ), stat_cost.order as u64)?;
         mon_state.level += 1;
         Ok(())
-        // Err(ErrorCode::SuspiciousTransaction.into())
     }
+    
+    /** destroy nft and give owning user its stat-tokens */
     pub fn dust_mon(ctx: Context<DustMon>, _mon_state_bump: u8, game_creator_bump: u8, _mass_mint_bump: u8, _energy_mint_bump: u8,_order_mint_bump: u8) -> ProgramResult {
-        // msg!("executin1'");
         let mon_stat = &mut ctx.accounts.mon_state;
         let level = mon_stat.level.clone();
         let stats: MonStatistics = ctx.accounts.mon_state.generate_stats(level).to_mon_lamports();
         let seeds = &[PREFIX, &ctx.accounts.game_creator_auth.key().to_bytes()[..], CREATOR, &[game_creator_bump]];
         let signer = &[&seeds[..]];
-        // msg!("mass {}, energy {}, entropy {}, level {}", stats.mass, stats.energy, stats.order, level);
         token::mint_to(CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             MintTo {
@@ -310,10 +257,10 @@ pub mod mon_maker {
             },
             signer
         ))?;
-        // let test = mon_maker::ID;
-        // return Err(ErrorCode::SuspiciousTransaction.into());
         Ok(())
     }
+    
+    /** destroy stat tokens in exchange for main game token ($MON) */
     pub fn buy_mon_tokens(ctx: Context<BuyMonTokens>, amount: Option<u64>, game_creator_bump: u8, _mon_token_mint_bump: u8, _mass_mint_bump: u8, _energy_mint_bump: u8, _order_mint_bump: u8) -> ProgramResult {
         let TokenCalc { amount_stat_tokens, amount_mon_tokens } = TokenCalc::mon_tokens_user_can_buy(
             amount,
@@ -321,15 +268,7 @@ pub mod mon_maker {
             MonStatistics { mass: ctx.accounts.mass_mint_pda.supply, energy: ctx.accounts.energy_mint_pda.supply, order: ctx.accounts.order_mint_pda.supply },
             ctx.accounts.mon_token_mint_pda.supply
         )?;
-        // let amount = if let Some(amount) = amount {
-        //     amount
-        // } else {
-        //     max_mon_tokens_user_can_buy
-        // };
         msg!("amount_stat_tokens {}, amount_mon_tokens {}", amount_stat_tokens, amount_mon_tokens);
-        // if amount > max_mon_tokens_user_can_buy {
-        //     return Err(ErrorCode::InvalidMonTokenAmount.into());
-        // }
         let seeds = &[PREFIX, &ctx.accounts.game_creator_auth.key().to_bytes()[..], CREATOR, &[game_creator_bump]];
         let signer = &[&seeds[..]];
         token::burn(CpiContext::new_with_signer(
@@ -369,7 +308,6 @@ pub mod mon_maker {
             signer
         ), amount_mon_tokens)?;
         Ok(())
-        // Err(ErrorCode::SuspiciousTransaction.into())
     }
 }
 
